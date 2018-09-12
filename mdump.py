@@ -5,6 +5,8 @@ import time
 from api import CallbackManager
 from ipython_shell import start_shell
 import api
+# from libdamm.api import API as DAMM
+# import sqlite3
 
 requirements = ["plugins.guest_agent"]
 
@@ -39,7 +41,7 @@ def new_proc(params):
         api.start_monitoring_process(pgd)
    
 def my_function(params):
-    # global cm
+    global cm
 
     # cpu_index = params["cpu_index"]
     # cpu = params["cpu"]
@@ -50,10 +52,13 @@ def my_function(params):
     # pgd = api.get_running_process(cpu_index)
     # pyrebox_print("Block end at (%x) %x -> %x\n" % (pgd, cur_pc, next_pc))
     pyrebox_print("damm is coming soon...")
-    pyrebox_print("[*] Recovering snapshot...")
-    api.load_vm("isnapshot")
-    pyrebox_print("[*] Recover snapshot complete:)")
-    start_shell()
+    cm.rm_callback("block_end")
+    # damm = DAMM(plugins=['all'], memimg=os.path.abspath(dump_path+"thefile.dump"), profile="WinXPSP3x86",db=dump_path+"res0.db")
+    # results = damm.run_plugins()
+    # for elem in results:
+    #     print elem
+    # sqlite_to_json(dump_path+"res0.db",dump_path+"res0.json")
+    
     
     
 
@@ -74,7 +79,7 @@ def initialize_callbacks(module_hdl, printer):
     api.save_vm("isnapshot") # Noooooooo Waaaaaaaaaay
     pyrebox_print("[*] Snapshot complete :)")
     pyrebox_print("[*]    Initializing callbacks")
-    # Initialize the callback manager, and register a couple of named callbacks.
+    
     cm = CallbackManager(module_hdl, new_style = True)
     cm.add_callback(CallbackManager.CREATEPROC_CB, new_proc, name="new_proc")
     pyrebox_print("[*]    Initialized callbacks\n")
@@ -82,6 +87,9 @@ def initialize_callbacks(module_hdl, printer):
 
 
 def clean():
+    pyrebox_print("[*] Recovering snapshot...")
+    api.load_vm("isnapshot")
+    pyrebox_print("[*] Recover snapshot complete:)")
     global cm
     print("[*]    Cleaning module")
     cm.clean()
@@ -116,10 +124,9 @@ def copy_execute(line):
 if __name__ == "__main__":
     print("[*] Loading python lalala module %s" % (__file__))
    
-    
     # start_time = time.time()
     # end_time = time.time()
     # while end_time - start_time <= longest_time:
     #     end_time = time.time()
-    # api.load_vm("isnapshot")
-    print("[*] Recover snapshot complete")
+    
+    print("[*] hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")

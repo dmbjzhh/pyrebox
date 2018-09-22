@@ -20,8 +20,8 @@
 import sys
 import os
 import volatility.utils
-import utils
-from utils import debug
+import dammutils
+from dammutils import debug
 from collections import OrderedDict
 
 

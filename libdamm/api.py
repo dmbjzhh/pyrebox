@@ -21,8 +21,8 @@ import sys
 import os
 import volsetup
 import plugin
-from utils import debug
-from utils import set_debug
+from dammutils import debug
+from dammutils import set_debug
 import sqlite3
 import itertools
 import db_ops

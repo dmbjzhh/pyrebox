@@ -18,8 +18,8 @@
 #
 
 import sqlite3
-from utils import debug
-from utils import err
+from dammutils import debug
+from dammutils import err
 import plugin
 import sys
 

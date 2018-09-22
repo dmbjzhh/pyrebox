@@ -35,7 +35,7 @@
 
 
 import sqlite3
-from utils import debug
+from dammutils import debug
 import plugin
 import time   
 

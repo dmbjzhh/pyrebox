@@ -24,8 +24,10 @@ import volatility.utils as utils
 import volatility.obj as obj
 import volatility.plugins.imageinfo as imageinfo
 import os.path
-from utils import debug
+from dammutils import debug
 import sys
+sys.path.append("..")
+from pyrebox.utils import ConfigurationManager as conf_m
 
 
 class VolSetup:
@@ -40,7 +42,7 @@ class VolSetup:
         '''
         # volatility black magic
         registry.PluginImporter()
-        self.config = conf.ConfObject()
+        self.config = conf_m.vol_conf
         self.config.optparser.set_conflict_handler(handler="resolve")
         registry.register_global_options(self.config, commands.Command)
 

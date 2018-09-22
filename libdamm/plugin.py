@@ -20,7 +20,7 @@
 import os
 import sys
 import glob
-from utils import debug
+from dammutils import debug
 
 
 def loaded_plugins_info(plugLibrary):

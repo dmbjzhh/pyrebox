@@ -26,8 +26,7 @@ import volatility.plugins.imageinfo as imageinfo
 import os.path
 from dammutils import debug
 import sys
-sys.path.append("..")
-from pyrebox.utils import ConfigurationManager as conf_m
+from utils import ConfigurationManager as conf_m
 
 
 class VolSetup:
@@ -99,7 +98,7 @@ class VolSetup:
         chosen = None
         profilelist = [p.__name__ for p in registry.get_plugin_classes(obj.Profile).values()]
         for profile in profilelist:
-            self.config.update('profile', profile)
+            # self.config.update('profile', profile)
             addr_space = utils.load_as(self.config, astype='any')
             if hasattr(addr_space, "dtb"):
                 chosen = profile
@@ -140,7 +139,8 @@ class VolSetup:
         @fname: memory image file name
         '''
         if os.path.isfile(fname):
-            self.config.update('location', "file:///%s" % os.path.abspath(fname))
+            # self.config.update('location', "file:///%s" % os.path.abspath(fname))
+            pass
         else:
             debug("File: %s does not exist." % fname)
         
@@ -152,7 +152,8 @@ class VolSetup:
         @profile: the Volatility profile to set
         '''                
         if profile in self.vol_profiles_list():
-            self.config.update('profile', profile)
+            # self.config.update('profile', profile)
+            pass
         else:
             debug("profile: %s does not exist." % profile)
     
@@ -163,7 +164,8 @@ class VolSetup:
 
         @kdbg: the string kdbg address to set
         '''                
-        self.config.update('kdbg', None if kdbg is None else int(kdbg, 16))
+        # self.config.update('kdbg', None if kdbg is None else int(kdbg, 16))
+        pass
         
  
                 

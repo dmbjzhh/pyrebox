@@ -67,7 +67,7 @@ def my_function(params):
     pyrebox_print("damm initialized")
     results = damm.run_plugins()
     for elem in results:
-        pyrebox_print(elem)
+        print(elem)
     
     # sqlite_to_json(dump_path+"res0.db",dump_path+"res0.json")
     

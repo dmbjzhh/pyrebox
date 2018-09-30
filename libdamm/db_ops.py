@@ -39,6 +39,7 @@ class DBOps:
         @return: list of string names of db tables 
         '''
         conn = sqlite3.connect(db)
+        conn.text_factory = str
         curs = conn.execute("SELECT name FROM sqlite_master WHERE type='table';")
         res = [str(x[0]) for x in curs.fetchall()]
         conn.close()
@@ -56,6 +57,7 @@ class DBOps:
         @return: list of db rows
         '''
         conn = sqlite3.connect(db)
+        conn.text_factory = str
         curs = conn.execute('select * from %s' % table)
         rows = curs.fetchall()
         conn.close()
@@ -77,6 +79,7 @@ class DBOps:
         @return: True if the specified table in the specified db
         '''
         conn = sqlite3.connect(db)
+        conn.text_factory = str
         res = False
         if table_name in self.get_tables(db):
             res = True
@@ -97,6 +100,7 @@ class DBOps:
         @env: the list of environment data for the memory image
         '''
         conn = sqlite3.connect(db)
+        conn.text_factory = str
         cmd = "create table META (varname text, varval text)"
         debug(cmd)
         conn.execute(cmd)
@@ -170,6 +174,7 @@ class DBOps:
         @conn: a db to insert into
         '''
         conn = sqlite3.connect(db)
+        conn.text_factory = str
         self.create_table(conn, setobj)
 
         for elem in setobj.analyze_file():  # run plugin on file ##memimg

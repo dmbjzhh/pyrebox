@@ -102,14 +102,14 @@ class PsXview(common.AbstractWindowsCommand, sessions.SessionsMixin):
         address = process.obj_offset
 
         # we're already at the file layer (i.e. psscan on a raw memory image)
-        if isinstance(addr_space, standard.FileAddressSpace) or isinstance(addr_space, pmemaddressspace.MemAddressSpace):
+        if isinstance(addr_space, standard.FileAddressSpace) or isinstance(addr_space, pmemaddressspace.PMemAddressSpace):
             return address
 
         paddr = addr_space.translate(address)
         offset = paddr
 
         addr_space = addr_space.base 
-        while not (isinstance(addr_space, standard.FileAddressSpace) and isinstance(addr_space, pmemaddressspace.PMemAddressSpace)):
+        while not (isinstance(addr_space, standard.FileAddressSpace) or isinstance(addr_space, pmemaddressspace.PMemAddressSpace)):
             offset = addr_space.translate(offset)
             # device memory addresses won't translate, so restore the original value 
             if offset == None:

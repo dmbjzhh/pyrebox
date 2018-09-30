@@ -19,7 +19,7 @@ target_procname = ""
 longest_time = 20
 start_time = 0
 
-dump_path = "/home/sam/dump"
+dump_path = "dump_result/"
 
 def new_proc(params):
     '''
@@ -110,7 +110,7 @@ def initialize_callbacks(module_hdl, printer):
     cm = CallbackManager(module_hdl, new_style = True)
     cm.add_callback(CallbackManager.CREATEPROC_CB, new_proc, name="new_proc")
     pyrebox_print("[*]    Initialized callbacks\n")
-    copy_execute("/home/sam/malware.exe")
+    copy_execute("malware/malware.exe")
 
 
 def clean():

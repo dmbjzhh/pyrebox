@@ -233,6 +233,7 @@ class API:
             print curr
             for elem in self.run_plugin(curr):
                 yield elem
+            print curr, "is finished"
 
 
     def run_plugins_grepable(self):

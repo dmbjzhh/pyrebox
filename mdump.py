@@ -16,10 +16,13 @@ pyrebox_print = None
 
 target_procname = ""
 
-longest_time = 20
+longest_time = 60
 start_time = 0
 
 dump_path = "dump_result/"
+
+# number of db file
+db_num = 0
 
 def new_proc(params):
     '''
@@ -40,15 +43,16 @@ def new_proc(params):
         pyrebox_print("Malware started! pid: %x, pgd: %x, name: %s" % (pid, pgd, name))
         cm.rm_callback("new_proc")
         start_time = time.time()
-        cm.add_callback(CallbackManager.BLOCK_END_CB, my_function, name="block_end")
+        cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_function, name="block_end")
         api.start_monitoring_process(pgd)
    
-def my_function(params):
+def mdump_function(params):
     global pyrebox_print
     global cm
     global start_time
     global longest_time
     global dump_path
+    global db_num
     # cpu_index = params["cpu_index"]
     # cpu = params["cpu"]
     # tb = params["tb"]
@@ -57,19 +61,19 @@ def my_function(params):
 
     # pgd = api.get_running_process(cpu_index)
     # pyrebox_print("Block end at (%x) %x -> %x\n" % (pgd, cur_pc, next_pc))
-    pyrebox_print("damm is coming soon...")
-    end_time = time.time()
-    # if end_time - start_time >= longest_time:
-    #     pyrebox_print("analyze over :)")
-    #     cm.rm_callback("block_end")
-    cm.rm_callback("block_end")
-    damm = DAMM(plugins=['all'], profile="WinXPSP3x86", db=dump_path+"res0.db")
+    damm = DAMM(plugins=['all'], profile="WinXPSP3x86", db=dump_path+"res"+str(db_num)+".db")
     pyrebox_print("damm initialized")
     results = damm.run_plugins()
     for elem in results:
-        print(elem)
+        # print(elem)
+        pass
     
     # sqlite_to_json(dump_path+"res0.db",dump_path+"res0.json")
+    end_time = time.time()
+    if end_time - start_time >= longest_time:
+        pyrebox_print("analyze over :)")
+        cm.rm_callback("block_end")
+    db_num += 1
     
 def copy_execute(line):
     '''Copy a file from host to guest, execute it, and pause VM on its EP

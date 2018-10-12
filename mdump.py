@@ -6,6 +6,8 @@ from api import CallbackManager
 import api
 from libdamm.api import API as DAMM
 import sqlite3
+from scripts.dealjson import sqlite_to_json
+from scripts.dealjson import diff2Graph
 
 requirements = ["plugins.guest_agent"]
 
@@ -16,13 +18,19 @@ pyrebox_print = None
 
 target_procname = ""
 
-longest_time = 60
-start_time = 0
+longest_time = 600
+# script initial start time
+s_start_time = 0
+# callback start time
+c_start_time = 0
 
 dump_path = "dump_result/"
 
 # number of db file
 db_num = 0
+
+# number of diff.json file
+diff_num = 1
 
 def new_proc(params):
     '''
@@ -33,7 +41,8 @@ def new_proc(params):
     '''
     global pyrebox_print
     global cm
-    global start_time
+    global s_start_time
+    global c_start_time
 
     pid = params["pid"]
     pgd = params["pgd"]
@@ -42,38 +51,46 @@ def new_proc(params):
     if name.lower() == "malware.exe":
         pyrebox_print("Malware started! pid: %x, pgd: %x, name: %s" % (pid, pgd, name))
         cm.rm_callback("new_proc")
-        start_time = time.time()
-        cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_function, name="block_end")
+        s_start_time = time.time()
+        c_start_time = time.time()
         api.start_monitoring_process(pgd)
+        cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_function, name="block_end")
    
 def mdump_function(params):
     global pyrebox_print
     global cm
-    global start_time
+    global s_start_time
     global longest_time
     global dump_path
     global db_num
-    # cpu_index = params["cpu_index"]
-    # cpu = params["cpu"]
-    # tb = params["tb"]
-    # cur_pc = params["cur_pc"]
-    # next_pc = params["next_pc"]
+    global diff_num
+    global c_start_time
 
-    # pgd = api.get_running_process(cpu_index)
-    # pyrebox_print("Block end at (%x) %x -> %x\n" % (pgd, cur_pc, next_pc))
-    damm = DAMM(plugins=['all'], profile="WinXPSP3x86", db=dump_path+"res"+str(db_num)+".db")
-    pyrebox_print("damm initialized")
-    results = damm.run_plugins()
-    for elem in results:
-        # print(elem)
-        pass
+    if time.time() - c_start_time >= 10 or db_num == 0:
+        damm = DAMM(plugins=['all'], profile="WinXPSP3x86", db=dump_path+"res"+str(db_num)+".db")
+        pyrebox_print("damm initialized")
+        results = damm.run_plugins()
+        for elem in results:
+            # print(elem)
+            pass
+        
+        sqlite_to_json(dump_path+"res%d.db"%(db_num),dump_path+"res%d.json"%(db_num))
+        pyrebox_print("res%d.json file has been created"%(db_num))
+
+        # compare the diff between two res.json and create diff.json file 
+        if db_num > 0:
+            ret = diff2Graph(dump_path+"res%d.json"%(db_num-1),dump_path+"res%d.json"%(db_num),dump_path+"diff%d.json"%(diff_num))
+            print(ret)
+            if ret is True:
+                pyrebox_print("diff%d.json file has been created"%(diff_num))
+                diff_num += 1
+        db_num += 1
+        c_start_time = time.time()
     
-    # sqlite_to_json(dump_path+"res0.db",dump_path+"res0.json")
-    end_time = time.time()
-    if end_time - start_time >= longest_time:
+    if time.time() - s_start_time >= longest_time:
         pyrebox_print("analyze over :)")
         cm.rm_callback("block_end")
-    db_num += 1
+    
     
 def copy_execute(line):
     '''Copy a file from host to guest, execute it, and pause VM on its EP
@@ -125,5 +142,3 @@ def clean():
 
 if __name__ == "__main__":
     print("[*] Loading python lalala module %s" % (__file__))
-    
-    print("[*] hhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh")

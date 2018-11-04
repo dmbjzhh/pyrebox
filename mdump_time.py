@@ -1,14 +1,13 @@
 # mdump basic function
 
 from __future__ import print_function
-import time
+from api import get_system_time
 from api import CallbackManager
 import api
 from libdamm.api import API as DAMM
 import sqlite3
 from scripts.dealjson import sqlite_to_json
 from scripts.dealjson import diff2Graph
-import os
 
 requirements = ["plugins.guest_agent"]
 
@@ -18,7 +17,7 @@ cm = None
 pyrebox_print = None
 
 target_procname = ""
-
+# longest running time of VM
 longest_time = 600
 # script initial start time
 s_start_time = 0
@@ -32,9 +31,6 @@ db_num = 0
 
 # number of diff.json file
 diff_num = 1
-
-# exe file copy to VM, by default is calculator.exe
-exe_file = "cal.exe"
 
 def new_proc(params):
     '''
@@ -55,8 +51,8 @@ def new_proc(params):
     if name.lower() == "malware.exe":
         pyrebox_print("Malware started! pid: %x, pgd: %x, name: %s" % (pid, pgd, name))
         cm.rm_callback("new_proc")
-        s_start_time = time.time()
-        c_start_time = time.time()
+        s_start_time = get_system_time()
+        c_start_time = get_system_time()
         api.start_monitoring_process(pgd)
         cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_function, name="block_end")
    
@@ -70,7 +66,7 @@ def mdump_function(params):
     global diff_num
     global c_start_time
 
-    if time.time() - c_start_time >= 10 or db_num == 0:
+    if (get_system_time() - c_start_time).seconds >= 10 or db_num == 0:
         damm = DAMM(plugins=['all'], profile="WinXPSP3x86", db=dump_path+"res"+str(db_num)+".db")
         pyrebox_print("damm initialized")
         results = damm.run_plugins()
@@ -89,9 +85,10 @@ def mdump_function(params):
                 pyrebox_print("diff%d.json file has been created"%(diff_num))
                 diff_num += 1
         db_num += 1
-        c_start_time = time.time()
+        c_start_time = get_system_time()
+        print(c_start_time)
     
-    if time.time() - s_start_time >= longest_time:
+    if (get_system_time() - s_start_time).seconds >= longest_time:
         pyrebox_print("analyze over :)")
         cm.rm_callback("block_end")
     
@@ -128,20 +125,14 @@ def initialize_callbacks(module_hdl, printer):
     '''
     global cm
     global pyrebox_print
-    global exe_file
 
-    mal_path = os.getcwd() + "/malware" # malware's path
-    malists = os.listdir(mal_path)
-    if len(malists) > 1:
-        malists.remove("cal.exe")
-        exe_file = malists[0]
     pyrebox_print = printer
     pyrebox_print("[*]    Initializing callbacks")
     
     cm = CallbackManager(module_hdl, new_style = True)
     cm.add_callback(CallbackManager.CREATEPROC_CB, new_proc, name="new_proc")
     pyrebox_print("[*]    Initialized callbacks\n")
-    copy_execute("malware/"+exe_file)
+    copy_execute("malware/malware.exe")
 
 
 def clean():

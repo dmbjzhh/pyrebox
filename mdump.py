@@ -5,7 +5,6 @@ import time
 from api import CallbackManager
 import api
 from libdamm.api import API as DAMM
-import sqlite3
 from scripts.dealjson import sqlite_to_json
 from scripts.dealjson import diff2Graph
 import os
@@ -36,6 +35,7 @@ diff_num = 1
 # exe file copy to VM, by default is calculator.exe
 exe_file = "cal.exe"
 
+
 def new_proc(params):
     '''
     Process creation callback. Receives 3 parameters:
@@ -47,19 +47,22 @@ def new_proc(params):
     global cm
     global s_start_time
     global c_start_time
+    global target_procname
 
     pid = params["pid"]
     pgd = params["pgd"]
     name = params["name"]
-    
-    if name.lower() == "malware.exe":
+
+    if name.lower() == target_procname:
         pyrebox_print("Malware started! pid: %x, pgd: %x, name: %s" % (pid, pgd, name))
-        cm.rm_callback("new_proc")
+        cm.rm_callback("mdump_new_proc")
         s_start_time = time.time()
         c_start_time = time.time()
         api.start_monitoring_process(pgd)
+        pyrebox_print("Malware started! set the process monitor")
         cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_function, name="block_end")
-   
+
+
 def mdump_function(params):
     global pyrebox_print
     global cm
@@ -77,25 +80,25 @@ def mdump_function(params):
         for elem in results:
             # print(elem)
             pass
-        
-        sqlite_to_json(dump_path+"res%d.db"%(db_num),dump_path+"res%d.json"%(db_num))
-        pyrebox_print("res%d.json file has been created"%(db_num))
+
+        sqlite_to_json(dump_path+"res%d.db" % (db_num), dump_path+"res%d.json" % (db_num))
+        pyrebox_print("res%d.json file has been created" % (db_num))
 
         # compare the diff between two res.json and create diff.json file 
         if db_num > 0:
-            ret = diff2Graph(dump_path+"res%d.json"%(db_num-1),dump_path+"res%d.json"%(db_num),dump_path+"diff%d.json"%(diff_num))
+            ret = diff2Graph(dump_path+"res%d.json" % (db_num-1), dump_path+"res%d.json" % (db_num), dump_path+"diff%d.json" % (diff_num))
             print(ret)
             if ret is True:
-                pyrebox_print("diff%d.json file has been created"%(diff_num))
+                pyrebox_print("diff%d.json file has been created" % (diff_num))
                 diff_num += 1
         db_num += 1
         c_start_time = time.time()
-    
+
     if time.time() - s_start_time >= longest_time:
         pyrebox_print("analyze over :)")
         cm.rm_callback("block_end")
-    
-    
+
+
 def copy_execute(line):
     '''Copy a file from host to guest, execute it, and pause VM on its EP
 
@@ -130,16 +133,19 @@ def initialize_callbacks(module_hdl, printer):
     global pyrebox_print
     global exe_file
 
-    mal_path = os.getcwd() + "/malware" # malware's path
+    mal_path = os.getcwd() + "/malware"  # malware's path
     malists = os.listdir(mal_path)
     if len(malists) > 1:
         malists.remove("cal.exe")
         exe_file = malists[0]
+
     pyrebox_print = printer
     pyrebox_print("[*]    Initializing callbacks")
     
-    cm = CallbackManager(module_hdl, new_style = True)
-    cm.add_callback(CallbackManager.CREATEPROC_CB, new_proc, name="new_proc")
+    cm = CallbackManager(module_hdl, new_style=True)
+
+    cm.add_callback(CallbackManager.CREATEPROC_CB, new_proc, name="mdump_new_proc")
+
     pyrebox_print("[*]    Initialized callbacks\n")
     copy_execute("malware/"+exe_file)
 
@@ -149,6 +155,7 @@ def clean():
     print("[*]    Cleaning module")
     cm.clean()
     print("[*]    Cleaned module")
+
 
 if __name__ == "__main__":
     print("[*] Loading python lalala module %s" % (__file__))

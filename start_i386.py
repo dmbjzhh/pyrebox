@@ -22,26 +22,26 @@ else:
     p1.stdin.write("q\n")
     time.sleep(2)
     
-# #make the trigger
-# print("Check the trigger")
-# opcode_trigger="trigger/trigger_opcode_user_only-i386-softmmu.so"
-# if not os.path.isfile(opcode_trigger):
-#     print("Make the trigger")
-#     subprocess.call("make triggers/trigger_opcode_user_only-i386-softmmu.so", shell=True)
+#make the trigger
+print("Check the trigger")
+opcode_trigger="trigger/trigger_opcode_user_only-i386-softmmu.so"
+if not os.path.isfile(opcode_trigger):
+    print("Make the trigger")
+    subprocess.call("make triggers/trigger_opcode_user_only-i386-softmmu.so", shell=True)
 
-# #produce the symbols file 
-# serialFile = "/tmp/ntdll.symbols.bin"
-# if not os.path.isfile(serialFile) or os.path.getsize(serialFile) == 0:
-#     print("Produce the symbols file")
-#     p = subprocess.Popen("./pyrebox-i386 -monitor stdio -m 256 -usb -device usb-tablet -drive file=../pyrebox_venv/images/WinXP.qcow2,index=0,media=disk,format=qcow2,cache=unsafe -loadvm clean", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
-#     res = p.poll()
-#     while res is None:
-#         line = p.stdout.readline()
-#         time.sleep(1) if line == None else print(line.strip())
-#         if 'End symbol serialization' in line:
-#             p.stdin.write('q\n')
-#         #time.sleep(1)
-#         res = p.poll()
+#produce the symbols file 
+serialFile = "/tmp/ntdll.symbols.bin"
+if not os.path.isfile(serialFile) or os.path.getsize(serialFile) == 0:
+    print("Produce the symbols file")
+    p = subprocess.Popen("./pyrebox-i386 -monitor stdio -m 256 -usb -device usb-tablet -drive file=../pyrebox_venv/images/WinXP.qcow2,index=0,media=disk,format=qcow2,cache=unsafe -loadvm clean", shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.PIPE)
+    res = p.poll()
+    while res is None:
+        line = p.stdout.readline()
+        time.sleep(1) if line == None else print(line.strip())
+        if 'End symbol serialization' in line:
+            p.stdin.write('q\n')
+        #time.sleep(1)
+        res = p.poll()
 
 #run the malware
 print("Run malware")

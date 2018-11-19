@@ -33,5 +33,8 @@ name: win_agent_32.exe
 conf: win_agent_32.exe.conf 
 
 [MDUMP]
+target: calculator.exe
 mode: syscall 
 damm: False
+text_log: True
+runtime: 600

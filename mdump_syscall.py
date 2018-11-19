@@ -2,18 +2,14 @@
 
 from __future__ import print_function
 import time
+import sys
 from api import CallbackManager
 import api
 import bisect
-import time
 from collections import defaultdict
 import functools
 from volatility.plugins.overlays.windows.xp_sp2_x86_syscalls import syscalls
 from utils import ConfigurationManager as conf_m
-
-from libdamm.api import API as DAMM
-# from scripts.dealjson import sqlite_to_json
-# from scripts.dealjson import diff2Graph
 
 requirements = ["plugins.guest_agent"]
 
@@ -24,8 +20,12 @@ cm = None
 pyrebox_print = None
 mdump_path = "dump_result/"
 
-# default longest time
-longest_time = 600
+# max running time from config file
+try:
+    MAX_RUNNING_TIME = conf_m.config.get('MDUMP', 'runtime')
+except:
+    pyrebox_print("No run time is specified, the default run time will be used.")
+    MAX_RUNNING_TIME = 600
 # script initial start time
 s_start_time = 0
 
@@ -33,8 +33,12 @@ s_start_time = 0
 db_num = 0
 # number of diff.json file
 diff_num = 1
-
+# calling damm or not
 MDUMP_DAMM = conf_m.config.get('MDUMP', 'damm')
+# print on the screen and a txt file
+MDUMP_LOG = conf_m.config.get('MDUMP', 'text_log')
+# a buffer that stores the log
+mdump_buffer = []
 
 # Get the API list mode
 MDUMP_AT_SYSCALL = 1
@@ -62,7 +66,7 @@ mdump_symbols_loaded = False
 TARGET_LONG_SIZE = api.get_os_bits() / 8
 
 process_syms = []
-target_procname = "malware.exe"
+target_procname = conf_m.config.get('MDUMP', 'target')
 process_symbols_file = "/tmp/"+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
 
 # symbols for ntdll
@@ -95,32 +99,50 @@ class Symbol:
         return self.addr >= other.addr
 
 
+def mdump_print(mdump_log):
+    global mdump_buffer
+    if type(mdump_log) != str:
+        mdump_log = str(mdump_log)
+    if MDUMP_LOG:
+        if len(mdump_buffer) >= 100:
+            with open("{0}/{1}_{2}_log.txt".format(mdump_path, target_procname, mdump_mode), 'a') as f:
+                for log in mdump_buffer:
+                    f.write(log+'\n')
+                f.write(mdump_log+'\n')
+            mdump_buffer = []
+        else:
+            mdump_buffer.append(mdump_log)
+
+
 def mdump_call_damm():
+    from libdamm.api import API as DAMM
+    # from scripts.dealjson import sqlite_to_json
+    # from scripts.dealjson import diff2Graph
     global pyrebox_print
     global cm
     global db_num
     global diff_num
 
-    damm = DAMM(plugins=['all'], profile=conf_m.config.get('VOL', 'profile'), db=dump_path+"res"+str(db_num)+".db")
+    damm = DAMM(plugins=['all'], profile=conf_m.config.get('VOL', 'profile'), db=mdump_path+"res"+str(db_num)+".db")
     pyrebox_print("damm initialized")
     results = damm.run_plugins()
     for elem in results:
         # print(elem)
         pass
 
-    # sqlite_to_json(dump_path+"res%d.db" % db_num, dump_path+"res%d.json" % db_num)
+    # sqlite_to_json(mdump_path+"res%d.db" % db_num, mdump_path+"res%d.json" % db_num)
     # pyrebox_print("res%d.json file has been created" % (db_num))
 
     # # compare the diff between two res.json and create diff.json files
     # if db_num > 0:
-    #     ret = diff2Graph(dump_path+"res%d.json" % (db_num-1), dump_path+"res%d.json" % db_num, dump_path+"diff%d.json" % diff_num)
+    #     ret = diff2Graph(mdump_path+"res%d.json" % (db_num-1), mdump_path+"res%d.json" % db_num, mdump_path+"diff%d.json" % diff_num)
     #     print(ret)
     #     if ret is True:
     #         pyrebox_print("diff%d.json file has been created" % diff_num)
     #         diff_num += 1
     db_num += 1
 
-    if time.time() - s_start_time >= longest_time:
+    if time.time() - s_start_time >= MAX_RUNNING_TIME:
         pyrebox_print("analyze over :)")
         cm.clean()
 
@@ -173,14 +195,16 @@ def mdump_syscall_func(dest_pid, dest_pgd, params):
                 pyrebox_print("Error in syscall index")
                 return
             pyrebox_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
+            mdump_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
             # call DAMM to analyze
+            pyrebox_print("DAMMMMMMMMM is "+MDUMP_DAMM)
             if MDUMP_DAMM:
                 mdump_call_damm()
     elif TARGET_LONG_SIZE == 8:    
         pyrebox_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
+        mdump_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
         if MDUMP_DAMM:
                 mdump_call_damm()
-
 
 def mdump_opcodes(dest_pid, dest_pgd, params):
     global pyrebox_print
@@ -215,8 +239,11 @@ def mdump_opcodes(dest_pid, dest_pgd, params):
 
         if TARGET_LONG_SIZE == 4:
             pyrebox_print("[PID:%x] pc:%08x-->mod:%s,func:%s(%08x)" % (dest_pid, pc, mod, func, real_api_addr))
+            mdump_print("[PID:%x] pc:%08x-->mod:%s,func:%s(%08x)" % (dest_pid, pc, mod, func, real_api_addr))
+                
         elif TARGET_LONG_SIZE == 8:    
             pyrebox_print("[PID:%x] pc:%016x-->mod:%s,func:%s(%016x)" % (dest_pid, pc, mod, func, real_api_addr))
+            mdump_print("[PID:%x] pc:%016x-->mod:%s,func:%s(%016x)" % (dest_pid, pc, mod, func, real_api_addr))
 
     except Exception as e:
         pyrebox_print(str(e))
@@ -253,6 +280,8 @@ def mdump_syscall_trace(dest_pid, dest_pgd):
         if s.func == KiFastSystemCall_name:
             KiFastSystemCall_addr = s.addr+base
             pyrebox_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
+            mdump_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
+
 
     if KiFastSystemCall_addr == -1:
         pyrebox_print("Error, there is no KiFastSystemCall symbol")
@@ -277,6 +306,7 @@ def module_loaded(params):
     fullname = params["fullname"]
     modules[name] = (base, size)
     pyrebox_print("Module name:%s" % name)
+    mdump_print("Module name:%s" % name)
 
     
     if  mdump_symbols_loaded == False and  MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL:
@@ -447,6 +477,7 @@ def initialize_callbacks(module_hdl, printer):
     '''
     global cm
     global pyrebox_print
+    global target_procname
 
     pyrebox_print = printer
     pyrebox_print("[*]  Initializing callbacks")
@@ -454,13 +485,23 @@ def initialize_callbacks(module_hdl, printer):
     cm = CallbackManager(module_hdl, new_style = True)
 
     cm.add_callback(CallbackManager.CREATEPROC_CB, mdump_new_proc, name="mdump_new_proc")
-    
+
     pyrebox_print("[*]  Initialized callbacks\n")
-    copy_execute("malware/malware.exe")
+    # check if the target process exists, set calculator.exe as the default target process if it does not exist
+    from os import listdir
+    if target_procname not in listdir("malware/"):
+        target_procname = "calculator.exe"
+    copy_execute("malware/"+target_procname)
 
 
 def clean():
     global cm
+    global mdump_buffer
+    if mdump_buffer:
+        with open("{0}/{1}_{2}_log.txt".format(mdump_path, target_procname, mdump_mode), 'a') as f:
+            for log in mdump_buffer:
+                f.write(log+'\n')
+        mdump_buffer = []
     print("[*]    Cleaning module")
     cm.clean()
     print("[*]    Cleaned module")

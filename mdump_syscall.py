@@ -22,7 +22,7 @@ mdump_path = "dump_result/"
 
 # max running time from config file
 try:
-    MAX_RUNNING_TIME = conf_m.config.get('MDUMP', 'runtime')
+    MAX_RUNNING_TIME = int(conf_m.config.get('MDUMP', 'runtime'))
 except:
     pyrebox_print("No run time is specified, the default run time will be used.")
     MAX_RUNNING_TIME = 600
@@ -33,6 +33,8 @@ s_start_time = 0
 db_num = 0
 # number of diff.json file
 diff_num = 1
+MAX_TB_NUM = 1000000
+tb_num = 0
 # calling damm or not
 MDUMP_DAMM = conf_m.config.get('MDUMP', 'damm')
 # print on the screen and a txt file
@@ -99,11 +101,21 @@ class Symbol:
         return self.addr >= other.addr
 
 
+def mdump_clean(tmppath):
+    import os,glob
+    rmfiles = []
+    rmfiles.extend(glob.glob(tmppath+"*.json"))
+    rmfiles.extend(glob.glob(tmppath+"*.db"))
+    rmfiles.extend(glob.glob(tmppath+"*.txt"))
+    for f in rmfiles:
+        os.remove(f)
+
+
 def mdump_print(mdump_log):
     global mdump_buffer
     if type(mdump_log) != str:
         mdump_log = str(mdump_log)
-    if MDUMP_LOG:
+    if MDUMP_LOG == "True":
         if len(mdump_buffer) >= 100:
             with open("{0}/{1}_{2}_log.txt".format(mdump_path, target_procname, mdump_mode), 'a') as f:
                 for log in mdump_buffer:
@@ -197,14 +209,13 @@ def mdump_syscall_func(dest_pid, dest_pgd, params):
             pyrebox_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
             mdump_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
             # call DAMM to analyze
-            pyrebox_print("DAMMMMMMMMM is "+MDUMP_DAMM)
-            if MDUMP_DAMM:
+            if MDUMP_DAMM == "True":
                 mdump_call_damm()
     elif TARGET_LONG_SIZE == 8:    
         pyrebox_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
         mdump_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
-        if MDUMP_DAMM:
-                mdump_call_damm()
+        if MDUMP_DAMM == "True":
+            mdump_call_damm()
 
 def mdump_opcodes(dest_pid, dest_pgd, params):
     global pyrebox_print
@@ -250,6 +261,26 @@ def mdump_opcodes(dest_pid, dest_pgd, params):
         traceback.print_exec()
     finally:
         return
+
+
+def mdump_tb_func(params):
+    # global tb_num
+    # if tb_num > MAX_TB_NUM:
+    #     mdump_call_damm()
+    #     tb_num = 1
+    # else:
+    #     tb_num += 1
+    mdump_call_damm()
+
+
+def mdump_tb_trace():
+    global pyrebox_print
+    global cm
+    pyrebox_print("Initializing translation block trace......")
+
+    cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_tb_func, name="mdump_tb")
+    cm.add_trigger("mdump_tb", "triggers/trigger_mdump_tb.so")
+    # cm.set_trigger_var("mdump_tb", "max_mdump_tb_num", MAX_TB_NUM)
 
 
 def mdump_api_trace(dest_pid, dest_pgd):
@@ -308,24 +339,25 @@ def module_loaded(params):
     pyrebox_print("Module name:%s" % name)
     mdump_print("Module name:%s" % name)
 
-    
-    if  mdump_symbols_loaded == False and  MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL:
-        #only update symbols for the process
-        proc_syms = api.get_symbol_list(pgd)
-        if len(proc_syms) == 0: #can't get syms at the time
-            return
-            
-        pyrebox_print("Translate proc_syms({}) to ntdll symbols".format(len(proc_syms)))
-        for s in proc_syms:
-            mod = s['mod']
-            func = s['name']
-            addr = s['addr']
-            if mod == ntdll_name:
-                base, size = modules[mod]
-                pos = bisect.bisect_left(ntdll_syms, Symbol('', '', addr))
-                if pos >= 0 and pos < len(ntdll_syms) and ntdll_syms[pos].addr == addr:
-                    continue
-                bisect.insort(ntdll_syms, Symbol(mod, func, addr))
+    # process mdump at system call
+    if  MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL:
+        if mdump_symbols_loaded == False:
+            #only update symbols for the process
+            proc_syms = api.get_symbol_list(pgd)
+            if len(proc_syms) == 0: #can't get syms at the time
+                return
+                
+            pyrebox_print("Translate proc_syms({}) to ntdll symbols".format(len(proc_syms)))
+            for s in proc_syms:
+                mod = s['mod']
+                func = s['name']
+                addr = s['addr']
+                if mod == ntdll_name:
+                    base, size = modules[mod]
+                    pos = bisect.bisect_left(ntdll_syms, Symbol('', '', addr))
+                    if pos >= 0 and pos < len(ntdll_syms) and ntdll_syms[pos].addr == addr:
+                        continue
+                    bisect.insort(ntdll_syms, Symbol(mod, func, addr))
 
         if len(ntdll_syms):
             mdump_symbols_loaded = True
@@ -390,7 +422,6 @@ def module_loaded(params):
                 pyrebox_print("serial error:{}".format(e))
 
 
-
 def mdump_new_proc(params):
     '''
     Process creation callback. Receives 3 parameters:
@@ -445,6 +476,9 @@ def mdump_new_proc(params):
             mdump_api_trace(pid, pgd)
         api.start_monitoring_process(pgd)
         pyrebox_print("Malware started! set the process monitor" )
+        # process mdump at translation block
+        if MDUMP_MODE_TYPE == MDUMP_AT_RUN_TB:
+            mdump_tb_trace()
 
 
 def copy_execute(line):
@@ -480,6 +514,8 @@ def initialize_callbacks(module_hdl, printer):
     global target_procname
 
     pyrebox_print = printer
+    pyrebox_print("[*] Removing old mdump result")
+    mdump_clean(mdump_path)
     pyrebox_print("[*]  Initializing callbacks")
     
     cm = CallbackManager(module_hdl, new_style = True)

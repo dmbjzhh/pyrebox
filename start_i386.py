@@ -30,26 +30,6 @@ else:
     p1.stdin.write("q\n")
     time.sleep(2)
 
-# set pyrebox.conf
-try:
-    f1 = open("pyrebox.conf.mdump", "r")
-    f2 = open("pyrebox.conf", "w")
-
-    for line in f1:
-        if "plugins.guest_agent: True" in line:
-            line = line.replace("True", "False")
-
-        if "scripts.mdump_syscall: False" in line:
-            line = line.replace("False", "True")
-
-        if "target:" in line:
-            line = line.replace(line, "target: {}\n".format(target_procname))
-        f2.write(line)
-finally:
-    if f1:
-        f1.close()
-    if f2:
-        f2.close()
 
 # make the trigger
 print("Check the trigger")
@@ -71,6 +51,29 @@ if not os.path.isfile(serialFile) or os.path.getsize(serialFile) == 0:
             p.stdin.write('q\n')
         # time.sleep(1)
         res = p.poll()
+
+
+# set pyrebox.conf
+try:
+    f1 = open("pyrebox.conf.mdump", "r")
+    f2 = open("pyrebox.conf", "w")
+
+    for line in f1:
+        if "plugins.guest_agent: True" in line:
+            line = line.replace("True", "False")
+
+        if "scripts.mdump_syscall: False" in line:
+            line = line.replace("False", "True")
+
+        if "target:" in line:
+            line = line.replace(line, "target: {}\n".format(target_procname))
+        f2.write(line)
+finally:
+    if f1:
+        f1.close()
+    if f2:
+        f2.close()
+
 
 # run the malware
 print("Run malware")

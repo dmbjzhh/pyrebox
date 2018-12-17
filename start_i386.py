@@ -3,6 +3,7 @@ import subprocess
 import os
 import time
 import argparse
+import zipfile
 
 DEFAULT_TARGET = "calculator.exe"
 
@@ -30,7 +31,6 @@ else:
     p1.stdin.write("q\n")
     time.sleep(2)
 
-
 # make the trigger
 print("Check the trigger")
 opcode_trigger = "trigger/trigger_opcode_user_only-i386-softmmu.so"
@@ -47,11 +47,10 @@ if not os.path.isfile(serialFile) or os.path.getsize(serialFile) == 0:
     while res is None:
         line = p.stdout.readline()
         time.sleep(1) if line is None else print(line.strip())
-        if 'End symbol serialization' in line:
+        if 'End ntdll symbol serialization' in line:
             p.stdin.write('q\n')
         # time.sleep(1)
         res = p.poll()
-
 
 # set pyrebox.conf
 try:
@@ -74,6 +73,19 @@ finally:
     if f2:
         f2.close()
 
+
+# check folder /tmp/dump_result
+if not os.path.exists("/tmp/dump_result"):
+    os.makedirs("/tmp/dump_result")
+
+# decompress malware if not exsits
+if not os.path.exists("malware/"+target_procname):
+    try:
+        zip_name = "malware/"+target_procname[:-4]+".zip"
+        zipFile = zipfile.ZipFile(zip_name)
+        zipFile.extractall(path="malware/",pwd=bytes("mdump"))
+    except:
+        print("specified target zip file does not exsit!")
 
 # run the malware
 print("Run malware")

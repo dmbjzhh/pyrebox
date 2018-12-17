@@ -18,49 +18,33 @@ cm = None
 
 # Set printer
 pyrebox_print = None
-mdump_path = "/tmp/dump_result/"
+mdump_path = "dump_result/"
 
-# default config value
-MAX_RUNNING_TIME = 600
-MDUMP_DAMM = False
-MDUMP_LOG = True
-mdump_mode = 'syscall'
-target_procname = 'calculator.exe'
-
-
-def mdump_var_convert(s):
-    if s == "True":
-        return True
-    elif s == "False":
-        return False
-    else:
-        return int(s)
-
-
+# max running time from config file
 try:
-   # target exe name
-    target_procname = conf_m.config.get('MDUMP', 'target')
-    # trace mode
-    mdump_mode = conf_m.config.get('MDUMP', 'mode')
-    if mdump_mode not in ['api', 'syscall', 'tb']:
-        pyrebox_print("error API LIST mode:{}".format(mdump_mode))
-    # max running time from config file
-    MAX_RUNNING_TIME = mdump_var_convert(conf_m.config.get('MDUMP', 'runtime'))
-    # calling damm or not
-    MDUMP_DAMM = mdump_var_convert(conf_m.config.get('MDUMP', 'damm'))
-    # print on the screen and a txt file
-    MDUMP_LOG = mdump_var_convert(conf_m.config.get('MDUMP', 'text_log'))
- 
+    MAX_RUNNING_TIME = int(conf_m.config.get('MDUMP', 'runtime'))
 except:
-    print("No run time, or damm, or text_log, or target_procname, or mdump_mode specified in pyrebox.conf, the default run time will be used.")
-
+    pyrebox_print("No run time is specified, the default run time will be used.")
+    MAX_RUNNING_TIME = 600
 # script initial start time
 s_start_time = 0
+# time gap between calling damm
+mdump_interval = 10
+# the last time called damm
+mdump_tb_time = 0
 
 # number of db file
 db_num = 0
 # number of diff.json file
 diff_num = 1
+# MAX_TB_NUM = 1000000
+# tb_num = 0
+# calling damm or not
+MDUMP_DAMM = conf_m.config.get('MDUMP', 'damm')
+# make sure damm execute before NtUserGetMessage
+MDUMP_FLAG = True
+# print on the screen and a txt file
+MDUMP_LOG = conf_m.config.get('MDUMP', 'text_log')
 # a buffer that stores the log
 mdump_buffer = []
 
@@ -68,6 +52,11 @@ mdump_buffer = []
 MDUMP_AT_SYSCALL = 1
 MDUMP_AT_CALL_API = 2
 MDUMP_AT_RUN_TB = 3
+
+MDUMP_MODE_TYPE = MDUMP_AT_SYSCALL
+mdump_mode = conf_m.config.get('MDUMP', 'mode')
+if mdump_mode not in ['api', 'syscall', 'tb']:
+    pyrebox_print("error API LIST mode:{}".format(mdump_mode))
 
 if mdump_mode == 'api':
     MDUMP_MODE_TYPE = MDUMP_AT_CALL_API
@@ -85,20 +74,21 @@ mdump_symbols_loaded = False
 TARGET_LONG_SIZE = api.get_os_bits() / 8
 
 process_syms = []
+target_procname = conf_m.config.get('MDUMP', 'target')
 process_symbols_file = "/tmp/proc.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
 
 # symbols for ntdll
 ntdll_syms = []
 ntdll_name= "ntdll.dll"
-ntdll_symbols_file = "/tmp/ntdll.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
+ntdll_symbols_file = "/tmp/ntdll.symbols."+conf_m.config.get('VOL', 'profile')+'.bin'
 KiFastSystemCall_addr = -1  #xp sp2=0x7c92e4f0
 KiFastSystemCall_name = "KiFastSystemCall"
 
-winXP_Exclude_syscalls = [0x11a5, #NtUserGetMessage
-                          0x1165  #NtUserDispatchMessage
-                          ]
+# winXP_Exclude_syscalls = [0x11a5, #NtUserGetMessage
+#                           0x1165  #NtUserDispatchMessage
+#                           ]
+winXP_Exclude_syscalls = []
 
-print("===2")
 class Symbol:
     def __init__(self, mod, func, addr):
         self.mod = mod
@@ -118,13 +108,21 @@ class Symbol:
         return self.addr >= other.addr
 
 
+def mdump_clean(tmppath):
+    import os,glob
+    rmfiles = []
+    rmfiles.extend(glob.glob(tmppath+"*.json"))
+    rmfiles.extend(glob.glob(tmppath+"*.db"))
+    rmfiles.extend(glob.glob(tmppath+"*.txt"))
+    for f in rmfiles:
+        os.remove(f)
+
+
 def mdump_print(mdump_log):
-    global pyrebox_print
     global mdump_buffer
-    pyrebox_print(mdump_log)
     if type(mdump_log) != str:
         mdump_log = str(mdump_log)
-    if MDUMP_LOG:
+    if MDUMP_LOG == "True":
         if len(mdump_buffer) >= 100:
             with open("{0}/{1}_{2}_log.txt".format(mdump_path, target_procname, mdump_mode), 'a') as f:
                 for log in mdump_buffer:
@@ -215,14 +213,16 @@ def mdump_syscall_func(dest_pid, dest_pgd, params):
             if pos > 1 :
                 pyrebox_print("Error in syscall index")
                 return
+            pyrebox_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
             mdump_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
             # call DAMM to analyze
-            if MDUMP_DAMM:
+            if MDUMP_DAMM == "True":
                 mdump_call_damm()
     elif TARGET_LONG_SIZE == 8:    
+        pyrebox_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
         mdump_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
-        if MDUMP_DAMM:
-                mdump_call_damm()
+        if MDUMP_DAMM == "True":
+            mdump_call_damm()
 
 def mdump_opcodes(dest_pid, dest_pgd, params):
     global pyrebox_print
@@ -251,11 +251,13 @@ def mdump_opcodes(dest_pid, dest_pgd, params):
         #pyrebox_print("mod:{}, func:{}, addr:{}".format(mod, func, hex(real_api_addr)))
         if next_pc != real_api_addr:
             return
-
+        
         if TARGET_LONG_SIZE == 4:
+            pyrebox_print("[PID:%x] pc:%08x-->mod:%s,func:%s(%08x)" % (dest_pid, pc, mod, func, real_api_addr))
             mdump_print("[PID:%x] pc:%08x-->mod:%s,func:%s(%08x)" % (dest_pid, pc, mod, func, real_api_addr))
                 
-        elif TARGET_LONG_SIZE == 8:
+        elif TARGET_LONG_SIZE == 8:    
+            pyrebox_print("[PID:%x] pc:%016x-->mod:%s,func:%s(%016x)" % (dest_pid, pc, mod, func, real_api_addr))
             mdump_print("[PID:%x] pc:%016x-->mod:%s,func:%s(%016x)" % (dest_pid, pc, mod, func, real_api_addr))
 
     except Exception as e:
@@ -263,6 +265,78 @@ def mdump_opcodes(dest_pid, dest_pgd, params):
         traceback.print_exec()
     finally:
         return
+
+
+def mdump_tb_func(dest_pid, dest_pgd, params):
+    # global tb_num
+    # if tb_num > MAX_TB_NUM:
+    #     mdump_call_damm()
+    #     tb_num = 1
+    # else:
+    #     tb_num += 1
+    global pyrebox_print
+    global cm
+    global mdump_tb_time
+    global MDUMP_FLAG
+
+    cpu_index = params['cpu_index']
+    cpu = params['cpu']
+    tb = params['tb']
+    if cpu.EIP != KiFastSystemCall_addr:
+        pyrebox_print("Error in syscall_func")
+        return
+
+    if TARGET_LONG_SIZE == 4:
+        if MDUMP_DAMM == "True" and MDUMP_FLAG:
+            mdump_call_damm()
+            MDUMP_FLAG = False
+        if cpu.EAX == 0x11a5:
+            pos = (cpu.EAX & 0xf000) >> 12
+            num = (cpu.EAX & 0x0fff)
+            if pos > 1 :
+                pyrebox_print("Error in syscall index")
+                return
+            pyrebox_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
+            mdump_now = time.time()
+
+            if mdump_now - mdump_tb_time > mdump_interval:
+                mdump_tb_time = mdump_now
+                print(mdump_tb_time)
+                # call DAMM to analyze
+                if MDUMP_DAMM == "True":
+                    mdump_call_damm()
+                
+
+
+def mdump_tb_trace(dest_pid, dest_pgd):
+    global pyrebox_print
+    global cm
+    global modules
+    global ntdll_syms
+    global KiFastSystemCall_addr
+
+    pyrebox_print("Initializing translation block trace......")
+
+    # cm.add_callback(CallbackManager.BLOCK_END_CB, mdump_tb_func, name="mdump_tb")
+    # cm.add_trigger("mdump_tb", "triggers/trigger_mdump_tb.so")
+    # cm.set_trigger_var("mdump_tb", "max_mdump_tb_num", MAX_TB_NUM)
+
+    base, size = modules[ntdll_name]
+    if base == 0:
+        pyrebox_print("Error ntdll base addr")
+        return
+
+    for s in ntdll_syms:
+        if s.func == KiFastSystemCall_name:
+            KiFastSystemCall_addr = s.addr+base
+            pyrebox_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
+            mdump_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
+
+    if KiFastSystemCall_addr == -1:
+        pyrebox_print("Error, there is no KiFastSystemCall symbol")
+        return
+
+    cm.add_callback(CallbackManager.BLOCK_BEGIN_CB, functools.partial(mdump_tb_func, dest_pid, dest_pgd), name="mdump_tb_trace_{}".format(dest_pid), addr=KiFastSystemCall_addr, pgd=dest_pgd)
 
 
 def mdump_api_trace(dest_pid, dest_pgd):
@@ -292,6 +366,7 @@ def mdump_syscall_trace(dest_pid, dest_pgd):
     for s in ntdll_syms:
         if s.func == KiFastSystemCall_name:
             KiFastSystemCall_addr = s.addr+base
+            pyrebox_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
             mdump_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
 
 
@@ -317,10 +392,11 @@ def module_loaded(params):
     name = params["name"]
     fullname = params["fullname"]
     modules[name] = (base, size)
+    pyrebox_print("Module name:%s" % name)
     mdump_print("Module name:%s" % name)
 
-    #process mdump at syscall
-    if MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL:
+    # process mdump at system call
+    if  MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL or MDUMP_MODE_TYPE == MDUMP_AT_RUN_TB:
         if mdump_symbols_loaded == False:
             #only update symbols for the process
             proc_syms = api.get_symbol_list(pgd)
@@ -338,7 +414,7 @@ def module_loaded(params):
                     if pos >= 0 and pos < len(ntdll_syms) and ntdll_syms[pos].addr == addr:
                         continue
                     bisect.insort(ntdll_syms, Symbol(mod, func, addr))
-                
+
         if len(ntdll_syms):
             mdump_symbols_loaded = True
 
@@ -346,7 +422,7 @@ def module_loaded(params):
             try:
                 import cPickle as pickle
 
-                if MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL:
+                if MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL or MDUMP_MODE_TYPE == MDUMP_AT_RUN_TB:
                     pyrebox_print("Begin ntdll symbols serialization, len: {}".format(len(ntdll_syms)))
                     f = open(ntdll_symbols_file, 'wb')
                     pickle.dump(ntdll_syms, f)
@@ -360,36 +436,34 @@ def module_loaded(params):
             if ntdll_base == 0:
                 return
 
-            if not cm.callback_exists("mdump_syscall_trace_{}".format(pid)):
+            if not cm.callback_exists("mdump_syscall_trace_{}".format(pid)) and MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL :
                 pyrebox_print("Tracing syscalls of pid:{}".format(pid))
                 mdump_syscall_trace(pid, pgd)
+            
+            if not cm.callback_exists("mdump_tb_trace_{}".format(pid)) and MDUMP_MODE_TYPE == MDUMP_AT_RUN_TB :
+                pyrebox_print("Tracing tb syscalls of pid:{}".format(pid))
+                mdump_tb_trace(pid, pgd)
 
     #process mdump at calling an API
     if MDUMP_MODE_TYPE == MDUMP_AT_CALL_API:
         #only update symbols for the process
-        proc_syms = api.get_symbol_list()
+        proc_syms = api.get_symbol_list(pgd)
         if len(proc_syms) == 0: #can't get syms at the time
             return
-        if len(proc_syms) <= len(process_syms):
-            return
-        pyrebox_print("Translate process symbols, symbol amount={}".format(len(proc_syms)))
+
+        pyrebox_print("Translate process symbols")
         modules_in_syms = set(target_procname)
         for s in proc_syms:
             mod = s['mod']
             func = s['name']
             addr = s['addr']
-
-            if func == 'connect':
-                print('find 1 {} {} {}'.format(mod, func, addr))
-            if func == 'socket':
-                print('find 2 {} {} {}'.format(mod, func, addr))
-
             base, size = modules[mod]
             modules_in_syms.add(mod)
             pos = bisect.bisect_left(process_syms, Symbol('', '', addr))
             if pos >= 0 and pos < len(process_syms) and process_syms[pos].addr == addr:
                 continue
             bisect.insort(process_syms, Symbol(mod, func, addr))
+
             if(len(modules) == len(modules_in_syms)):
                 mdump_symbols_loaded = True
 
@@ -462,6 +536,9 @@ def mdump_new_proc(params):
             mdump_api_trace(pid, pgd)
         api.start_monitoring_process(pgd)
         pyrebox_print("Malware started! set the process monitor" )
+        # # process mdump at translation block
+        # if MDUMP_MODE_TYPE == MDUMP_AT_RUN_TB:
+        #     mdump_tb_trace()
 
 
 def copy_execute(line):
@@ -497,6 +574,8 @@ def initialize_callbacks(module_hdl, printer):
     global target_procname
 
     pyrebox_print = printer
+    pyrebox_print("[*] Removing old mdump result")
+    mdump_clean(mdump_path)
     pyrebox_print("[*]  Initializing callbacks")
     
     cm = CallbackManager(module_hdl, new_style = True)

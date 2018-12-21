@@ -13,15 +13,28 @@ parser.add_argument("--target", help="Name of the target malware")
 args = parser.parse_args()
 target_procname = args.target if args.target else DEFAULT_TARGET
 
+# check folder /tmp/dump_result
+if not os.path.exists("/tmp/dump_result"):
+    os.makedirs("/tmp/dump_result")
+
+# decompress malware if not exsits
+if not os.path.exists("malware/"+target_procname):
+    try:
+        zip_name = "malware/"+target_procname[:-4]+".zip"
+        zipFile = zipfile.ZipFile(zip_name)
+        zipFile.extractall(path="malware/",pwd=bytes("mdump"))
+    except:
+        print("specified target zip file does not exsit!")
+
 # check the snapshot
 print("Check the snapshot")
 
-if "clean" in subprocess.check_output("qemu-img snapshot -l ../pyrebox_venv/images/WinXP_test.qcow2", shell=True):
+if "clean" in subprocess.check_output("qemu-img snapshot -l ../pyrebox_venv/images/WinXP.qcow2", shell=True):
     print("VM already has a clean snapshot")
 else:
     print("Taking clean snapshot...")
     subprocess.call("cp pyrebox.conf.mdump pyrebox.conf", shell=True)
-    p1 = subprocess.Popen("./pyrebox-i386 -monitor stdio -m 256 -usb -device usb-tablet -drive file=../pyrebox_venv/images/WinXP_test.qcow2,index=0,media=disk,format=qcow2,cache=unsafe", shell=True, stdin=subprocess.PIPE)
+    p1 = subprocess.Popen("./pyrebox-i386 -monitor stdio -m 256 -usb -device usb-tablet -drive file=../pyrebox_venv/images/WinXP.qcow2,index=0,media=disk,format=qcow2,cache=unsafe", shell=True, stdin=subprocess.PIPE)
     time.sleep(300)
     p1.stdin.write("\n")
     p1.stdin.write("savevm clean\n")
@@ -73,20 +86,6 @@ finally:
     if f2:
         f2.close()
 
-
-# check folder /tmp/dump_result
-if not os.path.exists("/tmp/dump_result"):
-    os.makedirs("/tmp/dump_result")
-
-# decompress malware if not exsits
-if not os.path.exists("malware/"+target_procname):
-    try:
-        zip_name = "malware/"+target_procname[:-4]+".zip"
-        zipFile = zipfile.ZipFile(zip_name)
-        zipFile.extractall(path="malware/",pwd=bytes("mdump"))
-    except:
-        print("specified target zip file does not exsit!")
-
 # run the malware
 print("Run malware")
-subprocess.call("./pyrebox-i386 -monitor stdio -m 256 -usb -device usb-tablet -drive file=../pyrebox_venv/images/WinXP_test.qcow2,index=0,media=disk,format=qcow2,cache=unsafe -loadvm clean", shell=True)
+subprocess.call("./pyrebox-i386 -monitor stdio -m 256 -usb -device usb-tablet -drive file=../pyrebox_venv/images/WinXP.qcow2,index=0,media=disk,format=qcow2,cache=unsafe -loadvm clean", shell=True)

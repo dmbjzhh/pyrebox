@@ -10,6 +10,7 @@ from collections import defaultdict
 import functools
 from volatility.plugins.overlays.windows.xp_sp2_x86_syscalls import syscalls
 from utils import ConfigurationManager as conf_m
+from symbolfile import ntdll_symbols_file, process_symbols_file
 
 requirements = ["plugins.guest_agent"]
 
@@ -52,7 +53,7 @@ try:
     MDUMP_LOG = mdump_var_convert(conf_m.config.get('MDUMP', 'text_log'))
  
 except:
-    print("No run time, or damm, or text_log, or target_procname, or mdump_mode specified in pyrebox.conf, the default run time will be used.")
+    print("No run time, or damm, or text_log, or target_procname, or mdump_mode specified in pyrebox.conf, the default value will be used.")
 
 # script initial start time
 s_start_time = 0
@@ -85,12 +86,12 @@ mdump_symbols_loaded = False
 TARGET_LONG_SIZE = api.get_os_bits() / 8
 
 process_syms = []
-process_symbols_file = "/tmp/proc.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
+# process_symbols_file = "/tmp/proc.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
 
 # symbols for ntdll
 ntdll_syms = []
 ntdll_name= "ntdll.dll"
-ntdll_symbols_file = "/tmp/ntdll.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
+# ntdll_symbols_file = "/tmp/ntdll.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
 KiFastSystemCall_addr = -1  #xp sp2=0x7c92e4f0
 KiFastSystemCall_name = "KiFastSystemCall"
 
@@ -166,6 +167,15 @@ def mdump_call_damm():
     if time.time() - s_start_time >= MAX_RUNNING_TIME:
         pyrebox_print("analyze over :)")
         cm.clean()
+
+
+# Monitor process removal 
+def mdump_remove_process(params):
+    pid = params["pid"]
+    pgd = params["pgd"]
+    name = params["name"]
+
+    mdump_print("Process %s (%x) exited" % (name, pid))
 
 
 def locate_module(addr):
@@ -373,7 +383,8 @@ def module_loaded(params):
         if len(proc_syms) <= len(process_syms):
             return
         pyrebox_print("Translate process symbols, symbol amount={}".format(len(proc_syms)))
-        modules_in_syms = set(target_procname)
+        modules_in_syms = set()
+        modules_in_syms.add(target_procname)
         for s in proc_syms:
             mod = s['mod']
             func = s['name']
@@ -461,8 +472,7 @@ def mdump_new_proc(params):
         if MDUMP_MODE_TYPE == MDUMP_AT_CALL_API:
             mdump_api_trace(pid, pgd)
         api.start_monitoring_process(pgd)
-        pyrebox_print("Malware started! set the process monitor" )
-
+        pyrebox_print("Malware started! set the process monitor")
 
 def copy_execute(line):
     '''Copy a file from host to guest, execute it, and pause VM on its EP
@@ -498,10 +508,13 @@ def initialize_callbacks(module_hdl, printer):
 
     pyrebox_print = printer
     pyrebox_print("[*]  Initializing callbacks")
+    pyrebox_print("[*]  You are at " + mdump_mode + " mode!")
     
     cm = CallbackManager(module_hdl, new_style = True)
 
     cm.add_callback(CallbackManager.CREATEPROC_CB, mdump_new_proc, name="mdump_new_proc")
+
+    cm.add_callback(CallbackManager.REMOVEPROC_CB, mdump_remove_process, name="mdump_remove_proc")
 
     pyrebox_print("[*]  Initialized callbacks\n")
     # check if the target process exists, set calculator.exe as the default target process if it does not exist

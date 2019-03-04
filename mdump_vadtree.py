@@ -48,27 +48,91 @@ def get_dot(config, plugin_class):
     plugin = plugin_class(copy.deepcopy(config))
     try:
         plugin.render_dot(strio, plugin.calculate())
-        with open(dump_path+"graph.dot", "w") as f:
-            f.write(strio.getvalue())
+        return strio.getvalue()
     except Exception, e:
         print(repr(e))
         print("This plugin can not generate dot file!")
     
 
+# def get_vad_json(config, plugin_class, num):
+#     plugin = plugin_class(copy.deepcopy(config))
+#     plugin_result_json = plugin.calculate()
+#     plugin_result_dot = copy.deepcopy(plugin_result_json)
 
-def mdump_vad_tree():
+#     strio_json = StringIO.StringIO()
+#     plugin.render_json(strio_json, plugin_result_json)
+#     strio_dot = StringIO.StringIO()
+#     plugin.render_dot(strio_dot, plugin_result_dot)
+
+#     with open(dump_path+"vad.json","w") as f:
+#         f.write(strio_json.getvalue())
+#         pass
+#     with open(dump_path+"graph.dot", "w") as f:
+#         f.write(strio_dot.getvalue())
+
+
+def mdump_vad_tree(num):
     import volatility.plugins.vadinfo as vadinfo
-
-    # vtree = vadinfo.VADTree(conf_m.vol_conf).calculate()
-    # for task in vtree:
     config = conf_m.vol_conf
-    vadata = get_json(config, vadinfo.VADTree)
-    # pid_index = vadata['columns'].index('Pid')
-    # for row in vadata['rows']:
-    #     print("pid are: "+str(row[pid_index]))
-    with open(dump_path+"vad.json","w") as f:
-        json.dump(vadata, f)
-    get_dot(config, vadinfo.VADTree)
+    vad_temp_json = get_json(config, vadinfo.VADTree)
+    vad_dot = get_dot(config, vadinfo.VADTree)
+
+    # adjust json format
+    head = ['pid', 'vad', 'start', 'end', 'VadTag', 'flags', 'protection', 'VadType', 'ControlArea', 'segment', \
+           'NumberOfSectionReferences', 'NumberOfPfnReferences', 'NumberOfMappedViews', 'NumberOfUserReferences',\
+           'ControlFlags', 'FileObject', 'FileName', 'FirstprototypePTE', 'LastcontiguousPTE', 'Flags2']
+
+    vad_json = dict()
+    for vad_item in vad_temp_json["rows"]:
+        temp = dict(zip(head,vad_item))
+        if not vad_json.has_key(str(temp["pid"])):
+            vad_json[str(temp["pid"])] = list()
+        vad_json[str(temp["pid"])].append(temp)
+
+    with open(dump_path+"vad"+str(num)+".json", "w") as f:
+        try:
+            json_str = {"nodes":{}, "edges":{}}
+            # transform vad dot data to json data
+            pid_flag = False
+            for line in vad_dot.split("\n"):
+                if "Pid" in line:
+                    pid_flag = True
+                    root = True
+                    pid = line[7:14].strip()
+                    json_str["nodes"][pid] = {}
+                    json_str["edges"][pid] = []
+                    continue
+                if pid_flag:
+                    if "->" in line:
+                        if root:
+                            vad = line[:12]
+                            start_address = vad_json[pid][0]["start"]
+                            end_address = vad_json[pid][0]["end"]
+                            address = hex(start_address)[2:] + " - " + hex(end_address)[2:]
+                            json_str["nodes"][pid][vad] = {"color":"blue", "address":address}
+                            root = False
+                        tmp = {"source":line[0:12], "target":line[16:28]}
+                        json_str["edges"][pid].append(tmp)
+                    if "label" in line:
+                        vad = line[:12]
+                        address = line[31:50]
+                        color = line[115:-3]
+                        if color == "red":
+                            color = "purple"
+                        json_str["nodes"][pid][vad] = {"color": color, "address":address}
+                    if "/*" in line:
+                        pid_flag = False
+                        continue
+            # add vad info to nodes
+            for pid in vad_json.keys():
+                for node in vad_json[pid]:
+                    k = "vad_"+hex(node["vad"])[2:]
+                    json_str["nodes"][pid][k].update(node)
+        except Exception, e:
+            print(repr(e))
+        
+        f.write(json.dumps(json_str))
+    
     print("json complete")
 
 
@@ -86,7 +150,7 @@ def mdump_call_damm():
     for elem in results:
         pass
     pyrebox_print("Start analyse vad :)")
-    mdump_vad_tree()
+    mdump_vad_tree(0)
     pyrebox_print("analyze over :)")
     cm.clean()
 

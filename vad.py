@@ -103,15 +103,15 @@ class VAD(memobj.MemObject):
 
         self.fields["protection"] = str(protection) if protection else ''
         self.fields["VadType"] = str(vadType) if vadType else ''
-        self.fields["ControlArea"] = str(controlAreaAddr) if controlAreaAddr else ''
-        self.fields["segment"] = str(segmentAddr) if segmentAddr else ''
+        self.fields["ControlArea"] = str(controlAreaAddr) if controlAreaAddr else str(0)
+        self.fields["segment"] = str(segmentAddr) if segmentAddr else str(0)
         self.fields["NumberOfSectionReferences"] = str(numberOfSectionReferences) if numberOfSectionReferences else ''
         self.fields["NumberOfPfnReferences"] = str(numberOfPfnReferences) if numberOfPfnReferences else ''
         self.fields["NumberOfMappedViews"] = str(numberOfMappedViews) if numberOfMappedViews else ''
         self.fields["NumberOfUserReferences"] = str(numberOfUserReferences) if numberOfUserReferences else ''
         self.fields["ControlFlags"] = str(controlFlags) if controlFlags else ''
-        self.fields["FileObject"] = str(fileObjectAddr) if fileObjectAddr else ''
+        self.fields["FileObject"] = str(fileObjectAddr) if fileObjectAddr else str(0)
         self.fields["FileName"] = str(fileNameWithDevice) if fileNameWithDevice else ''
-        self.fields["FirstprototypePTE"] = str(firstPrototypePteAddr) if firstPrototypePteAddr else ''
-        self.fields["LastcontiguousPTE"] = str(lastContiguousPteAddr) if lastContiguousPteAddr else ''
+        self.fields["FirstprototypePTE"] = str(firstPrototypePteAddr) if firstPrototypePteAddr else str(0)
+        self.fields["LastcontiguousPTE"] = str(lastContiguousPteAddr) if lastContiguousPteAddr else str(0)
         self.fields["Flags2"] = str(flags2) if flags2 else ''

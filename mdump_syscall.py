@@ -138,8 +138,8 @@ def mdump_print(mdump_log):
 
 def mdump_call_damm():
     from libdamm.api import API as DAMM
-    # from scripts.dealjson import sqlite_to_json
-    # from scripts.dealjson import diff2Graph
+    from scripts.dealjson import sqlite_to_json
+    from scripts.dealjson import diff2Graph
     global pyrebox_print
     global cm
     global db_num
@@ -152,16 +152,16 @@ def mdump_call_damm():
         # print(elem)
         pass
 
-    # sqlite_to_json(mdump_path+"res%d.db" % db_num, mdump_path+"res%d.json" % db_num)
-    # pyrebox_print("res%d.json file has been created" % (db_num))
+    sqlite_to_json(mdump_path+"res%d.db" % db_num, mdump_path+"res%d.json" % db_num)
+    pyrebox_print("res%d.json file has been created" % (db_num))
 
     # # compare the diff between two res.json and create diff.json files
-    # if db_num > 0:
-    #     ret = diff2Graph(mdump_path+"res%d.json" % (db_num-1), mdump_path+"res%d.json" % db_num, mdump_path+"diff%d.json" % diff_num)
-    #     print(ret)
-    #     if ret is True:
-    #         pyrebox_print("diff%d.json file has been created" % diff_num)
-    #         diff_num += 1
+    if db_num > 0:
+        ret = diff2Graph(mdump_path+"res%d.json" % (db_num-1), mdump_path+"res%d.json" % db_num, mdump_path+"diff%d.json" % diff_num)
+        print(ret)
+        if ret is True:
+            pyrebox_print("diff%d.json file has been created" % diff_num)
+            diff_num += 1
     db_num += 1
 
     if time.time() - s_start_time >= MAX_RUNNING_TIME:
@@ -303,7 +303,6 @@ def mdump_syscall_trace(dest_pid, dest_pgd):
         if s.func == KiFastSystemCall_name:
             KiFastSystemCall_addr = s.addr+base
             mdump_print("KiFastSystemCall addr:{}".format(hex(KiFastSystemCall_addr)))
-
 
     if KiFastSystemCall_addr == -1:
         pyrebox_print("Error, there is no KiFastSystemCall symbol")
@@ -472,7 +471,8 @@ def mdump_new_proc(params):
         if MDUMP_MODE_TYPE == MDUMP_AT_CALL_API:
             mdump_api_trace(pid, pgd)
         api.start_monitoring_process(pgd)
-        pyrebox_print("Malware started! set the process monitor")
+        pyrebox_print("Malware started! set the process monitor" )
+
 
 def copy_execute(line):
     '''Copy a file from host to guest, execute it, and pause VM on its EP

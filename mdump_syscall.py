@@ -11,6 +11,7 @@ import functools
 from volatility.plugins.overlays.windows.xp_sp2_x86_syscalls import syscalls
 from utils import ConfigurationManager as conf_m
 from symbolfile import ntdll_symbols_file, process_symbols_file
+import copy, StringIO, json
 
 requirements = ["plugins.guest_agent"]
 
@@ -28,6 +29,9 @@ MDUMP_LOG = True
 mdump_mode = 'syscall'
 target_procname = 'calculator.exe'
 
+if_already_call_dame = False
+monitor_process_pid_list = None
+
 
 def mdump_var_convert(s):
     if s == "True":
@@ -39,7 +43,7 @@ def mdump_var_convert(s):
 
 
 try:
-   # target exe name
+    # target exe name
     target_procname = conf_m.config.get('MDUMP', 'target')
     # trace mode
     mdump_mode = conf_m.config.get('MDUMP', 'mode')
@@ -51,7 +55,7 @@ try:
     MDUMP_DAMM = mdump_var_convert(conf_m.config.get('MDUMP', 'damm'))
     # print on the screen and a txt file
     MDUMP_LOG = mdump_var_convert(conf_m.config.get('MDUMP', 'text_log'))
- 
+
 except:
     print("No run time, or damm, or text_log, or target_procname, or mdump_mode specified in pyrebox.conf, the default value will be used.")
 
@@ -78,7 +82,7 @@ else:
     MDUMP_MODE_TYPE = MDUMP_AT_RUN_TB
 
 # modules for the process
-modules = defaultdict(lambda :(0,0))
+modules = defaultdict(lambda: (0, 0))
 
 
 # symbols info
@@ -90,16 +94,16 @@ process_syms = []
 
 # symbols for ntdll
 ntdll_syms = []
-ntdll_name= "ntdll.dll"
+ntdll_name = "ntdll.dll"
 # ntdll_symbols_file = "/tmp/ntdll.symbols."+target_procname+'.'+conf_m.config.get('VOL', 'profile')+'.bin'
-KiFastSystemCall_addr = -1  #xp sp2=0x7c92e4f0
+KiFastSystemCall_addr = -1  # xp sp2=0x7c92e4f0
 KiFastSystemCall_name = "KiFastSystemCall"
 
-winXP_Exclude_syscalls = [0x11a5, #NtUserGetMessage
-                          0x1165  #NtUserDispatchMessage
+winXP_Exclude_syscalls = [0x11a5,  # NtUserGetMessage
+                          0x1165   # NtUserDispatchMessage
                           ]
 
-print("===2")
+
 class Symbol:
     def __init__(self, mod, func, addr):
         self.mod = mod
@@ -136,6 +140,88 @@ def mdump_print(mdump_log):
             mdump_buffer.append(mdump_log)
 
 
+def get_json(config, plugin_class):
+    strio = StringIO.StringIO()
+    plugin = plugin_class(copy.deepcopy(config))
+    plugin.render_json(strio, plugin.calculate())
+    return json.loads(strio.getvalue())
+
+
+def get_dot(config, plugin_class):
+    strio = StringIO.StringIO()
+    plugin = plugin_class(copy.deepcopy(config))
+    try:
+        plugin.render_dot(strio, plugin.calculate())
+        return strio.getvalue()
+    except Exception, e:
+        print(repr(e))
+        print("This plugin can not generate dot file!")
+
+
+def mdump_vad_tree(num):
+    import volatility.plugins.vadinfo as vadinfo
+    config = conf_m.vol_conf
+    vad_temp_json = get_json(config, vadinfo.VADTree)
+    vad_dot = get_dot(config, vadinfo.VADTree)
+
+    # adjust json format
+    head = ['pid', 'vad', 'start', 'end', 'VadTag', 'flags', 'protection', 'VadType', 'ControlArea', 'segment',
+            'NumberOfSectionReferences', 'NumberOfPfnReferences', 'NumberOfMappedViews', 'NumberOfUserReferences',
+            'ControlFlags', 'FileObject', 'FileName', 'FirstprototypePTE', 'LastcontiguousPTE', 'Flags2']
+
+    vad_json = dict()
+    for vad_item in vad_temp_json["rows"]:
+        temp = dict(zip(head, vad_item))
+        if not vad_json.has_key(str(temp["pid"])):
+            vad_json[str(temp["pid"])] = list()
+        vad_json[str(temp["pid"])].append(temp)
+
+    with open(mdump_path+"vad"+str(num)+".json", "w") as f:
+        try:
+            json_str = {"nodes": {}, "edges": {}}
+            # transform vad dot data to json data
+            pid_flag = False
+            for line in vad_dot.split("\n"):
+                if "Pid" in line:
+                    pid_flag = True
+                    root = True
+                    pid = line[7:14].strip()
+                    json_str["nodes"][pid] = {}
+                    json_str["edges"][pid] = []
+                    continue
+                if pid_flag:
+                    if "->" in line:
+                        if root:
+                            vad = line[:12]
+                            start_address = vad_json[pid][0]["start"]
+                            end_address = vad_json[pid][0]["end"]
+                            address = hex(start_address)[2:] + " - " + hex(end_address)[2:]
+                            json_str["nodes"][pid][vad] = {"color": "blue", "address": address}
+                            root = False
+                        tmp = {"source": line[0:12], "target": line[16:28]}
+                        json_str["edges"][pid].append(tmp)
+                    if "label" in line:
+                        vad = line[:12]
+                        address = line[31:50]
+                        color = line[115:-3]
+                        if color == "red":
+                            color = "purple"
+                        json_str["nodes"][pid][vad] = {"color": color, "address": address}
+                    if "/*" in line:
+                        pid_flag = False
+                        continue
+            # add vad info to nodes
+            for pid in vad_json.keys():
+                for node in vad_json[pid]:
+                    k = "vad_"+hex(node["vad"])[2:]
+                    json_str["nodes"][pid][k].update(node)
+        except Exception, e:
+            print(repr(e))
+
+        f.write(json.dumps(json_str))
+    print("vad json "+str(num)+" complete")
+
+
 def mdump_call_damm():
     from libdamm.api import API as DAMM
     from scripts.dealjson import sqlite_to_json
@@ -154,13 +240,16 @@ def mdump_call_damm():
 
     sqlite_to_json(mdump_path+"res%d.db" % db_num, mdump_path+"res%d.json" % db_num)
     pyrebox_print("res%d.json file has been created" % (db_num))
+    if db_num == 0:
+        mdump_vad_tree(db_num)
 
-    # # compare the diff between two res.json and create diff.json files
+    # compare the diff between two res.json and create diff.json files
     if db_num > 0:
         ret = diff2Graph(mdump_path+"res%d.json" % (db_num-1), mdump_path+"res%d.json" % db_num, mdump_path+"diff%d.json" % diff_num)
         print(ret)
         if ret is True:
             pyrebox_print("diff%d.json file has been created" % diff_num)
+            mdump_vad_tree(diff_num)
             diff_num += 1
     db_num += 1
 
@@ -169,7 +258,7 @@ def mdump_call_damm():
         cm.clean()
 
 
-# Monitor process removal 
+# Monitor process removal
 def mdump_remove_process(params):
     pid = params["pid"]
     pgd = params["pgd"]
@@ -188,11 +277,12 @@ def locate_module(addr):
 
     return None
 
+
 def locate_nearest_symbol(addr):
     global process_syms
 
     mod = locate_module(addr)
-    if mod == None:
+    if mod is None:
         return None
 
     base, size = modules[mod]
@@ -202,10 +292,11 @@ def locate_nearest_symbol(addr):
         return None
     while process_syms[pos].mod != mod and process_syms[pos].addr == addr - base and pos < len(process_syms)+1:
         pos += 1
-    if (addr - process_syms[pos].addr - base) == 0:    
+    if (addr - process_syms[pos].addr - base) == 0:
         return process_syms[pos]
     else:
         return None
+
 
 def mdump_syscall_func(dest_pid, dest_pgd, params):
     global pyrebox_print
@@ -219,20 +310,21 @@ def mdump_syscall_func(dest_pid, dest_pgd, params):
         return
 
     if TARGET_LONG_SIZE == 4:
-        if not cpu.EAX in winXP_Exclude_syscalls:
+        if cpu.EAX not in winXP_Exclude_syscalls:
             pos = (cpu.EAX & 0xf000) >> 12
             num = (cpu.EAX & 0x0fff)
-            if pos > 1 :
+            if pos > 1:
                 pyrebox_print("Error in syscall index")
                 return
             mdump_print("[PID:%x] %s:0x%08x" % (dest_pid, syscalls[pos][num], cpu.EAX))
             # call DAMM to analyze
             if MDUMP_DAMM:
                 mdump_call_damm()
-    elif TARGET_LONG_SIZE == 8:    
+    elif TARGET_LONG_SIZE == 8:
         mdump_print("[PID:%x] KiFastSystemCall RAX:%016x" % (dest_pid, cpu.RAX))
         if MDUMP_DAMM:
-                mdump_call_damm()
+            mdump_call_damm()
+
 
 def mdump_opcodes(dest_pid, dest_pgd, params):
     global pyrebox_print
@@ -258,15 +350,19 @@ def mdump_opcodes(dest_pid, dest_pgd, params):
         real_api_addr = sym.addr + base
         if real_api_addr < base and real_api_addr >= base+size:
             return
-        #pyrebox_print("mod:{}, func:{}, addr:{}".format(mod, func, hex(real_api_addr)))
+        # pyrebox_print("mod:{}, func:{}, addr:{}".format(mod, func, hex(real_api_addr)))
         if next_pc != real_api_addr:
             return
 
         if TARGET_LONG_SIZE == 4:
             mdump_print("[PID:%x] pc:%08x-->mod:%s,func:%s(%08x)" % (dest_pid, pc, mod, func, real_api_addr))
-                
+            if MDUMP_DAMM:
+                mdump_call_damm()
+
         elif TARGET_LONG_SIZE == 8:
             mdump_print("[PID:%x] pc:%016x-->mod:%s,func:%s(%016x)" % (dest_pid, pc, mod, func, real_api_addr))
+            if MDUMP_DAMM:
+                mdump_call_damm()
 
     except Exception as e:
         pyrebox_print(str(e))
@@ -281,9 +377,10 @@ def mdump_api_trace(dest_pid, dest_pgd):
     pyrebox_print("Initializing ntdll trace......")
 
     cm.add_callback(CallbackManager.OPCODE_RANGE_CB, functools.partial(mdump_opcodes, dest_pid, dest_pgd), name="mdump_opcode1_%x" % dest_pid, start_opcode=0xFF, end_opcode=0xFF)
-    
+
     cm.add_trigger(("mdump_opcode1_%x" % dest_pid), "triggers/trigger_opcode_user_only.so")
     cm.set_trigger_var(("mdump_opcode1_%x" % dest_pid), "cr3", dest_pgd)
+
 
 def mdump_syscall_trace(dest_pid, dest_pgd):
     global pyrebox_print
@@ -309,7 +406,7 @@ def mdump_syscall_trace(dest_pid, dest_pgd):
         return
 
     cm.add_callback(CallbackManager.BLOCK_BEGIN_CB, functools.partial(mdump_syscall_func, dest_pid, dest_pgd), name="mdump_syscall_trace_{}".format(dest_pid), addr=KiFastSystemCall_addr, pgd=dest_pgd)
-    
+
 
 def module_loaded(params):
     global ntdll_syms
@@ -328,14 +425,14 @@ def module_loaded(params):
     modules[name] = (base, size)
     mdump_print("Module name:%s" % name)
 
-    #process mdump at syscall
+    # process mdump at syscall
     if MDUMP_MODE_TYPE == MDUMP_AT_SYSCALL:
-        if mdump_symbols_loaded == False:
-            #only update symbols for the process
+        if mdump_symbols_loaded is False:
+            # only update symbols for the process
             proc_syms = api.get_symbol_list(pgd)
-            if len(proc_syms) == 0: #can't get syms at the time
+            if len(proc_syms) == 0:  # can't get syms at the time
                 return
-                
+
             pyrebox_print("Translate proc_syms({}) to ntdll symbols".format(len(proc_syms)))
             for s in proc_syms:
                 mod = s['mod']
@@ -347,7 +444,7 @@ def module_loaded(params):
                     if pos >= 0 and pos < len(ntdll_syms) and ntdll_syms[pos].addr == addr:
                         continue
                     bisect.insort(ntdll_syms, Symbol(mod, func, addr))
-                
+
         if len(ntdll_syms):
             mdump_symbols_loaded = True
 
@@ -364,7 +461,7 @@ def module_loaded(params):
             except Exception as e:
                 pyrebox_print("serial error:{}".format(e))
 
-            #add syscall trace        
+            # add syscall trace
             ntdll_base, ntdll_size = modules[ntdll_name]
             if ntdll_base == 0:
                 return
@@ -373,11 +470,11 @@ def module_loaded(params):
                 pyrebox_print("Tracing syscalls of pid:{}".format(pid))
                 mdump_syscall_trace(pid, pgd)
 
-    #process mdump at calling an API
+    # process mdump at calling an API
     if MDUMP_MODE_TYPE == MDUMP_AT_CALL_API:
-        #only update symbols for the process
+        # only update symbols for the process
         proc_syms = api.get_symbol_list()
-        if len(proc_syms) == 0: #can't get syms at the time
+        if len(proc_syms) == 0:  # can't get syms at the time
             return
         if len(proc_syms) <= len(process_syms):
             return
@@ -432,14 +529,24 @@ def mdump_new_proc(params):
     global mdump_symbols_loaded
     global MDUMP_MODE_TYPE
     global s_start_time
+    global monitor_process_pid_list
+
 
     pid = params["pid"]
     pgd = params["pgd"]
     name = params["name"]
+    ppid = params["ppid"]
+    
+    if_father_is_monitored = False
+    for i in monitor_process_pid_list:
+        if i == ppid:
+            if_father_is_monitored = True
+            monitor_process_pid_list.append(pid)
+            break
 
 
-    if name.lower() == target_procname:
-        #load serial symbols
+    if name.lower() == target_procname  or if_father_is_monitored:
+        # load serial symbols
         try:
             pyrebox_print("Begin load symbols")
             import cPickle as pickle
@@ -448,30 +555,51 @@ def mdump_new_proc(params):
                 ntdll_syms = pickle.load(f)
                 f.close()
                 pyrebox_print("End load ntdll symbols, len:{}".format(len(ntdll_syms)))
-                if len(ntdll_syms): 
+                if len(ntdll_syms):
                     mdump_symbols_loaded = True
             elif MDUMP_MODE_TYPE == MDUMP_AT_CALL_API:
                 f = open(process_symbols_file, 'rb')
                 process_syms = pickle.load(f)
                 f.close()
                 pyrebox_print("End load process symbols, len:{}".format(len(process_syms)))
-                if len(process_syms): 
+                if len(process_syms):
                     mdump_symbols_loaded = True
             else:
                 pass
         except Exception as e:
             pyrebox_print("Load syms error:{}".format(e))
 
-        #monitor the malware process
+        # monitor the malware process
         pyrebox_print("Malware started! pid: %x, pgd: %x, name: %s" % (pid, pgd, name))
-        cm.rm_callback("mdump_new_proc")
-        s_start_time = time.time()
-        cm.add_callback(CallbackManager.LOADMODULE_CB, module_loaded, pgd = pgd, name = "mdump_module_loaded")
+
+        
+        if s_start_time == 0:
+            s_start_time = time.time()
+
+        cm.add_callback(CallbackManager.LOADMODULE_CB, module_loaded, pgd=pgd, name="mdump_module_loaded")
         pyrebox_print("Malware started! set the load module monitor")
         if MDUMP_MODE_TYPE == MDUMP_AT_CALL_API:
             mdump_api_trace(pid, pgd)
         api.start_monitoring_process(pgd)
-        pyrebox_print("Malware started! set the process monitor" )
+        pyrebox_print("Malware started! set the process monitor")
+
+
+def get_main_proc_pid(params):
+    global monitor_process_pid_list
+    global cm
+
+    pid = params["pid"]
+    pgd = params["pgd"]
+    name = params["name"]
+    ppid = params["ppid"]
+
+
+    if name.lower() == target_procname:
+        monitor_process_pid_list.append(pid)
+        cm.rm_callback("get_main_proc_pid")
+
+
+
 
 
 def copy_execute(line):
@@ -486,8 +614,8 @@ def copy_execute(line):
     from plugins.guest_agent import guest_agent
 
     pyrebox_print("Copying host file to guest, using agent...")
-    guest_agent.copy_file(line.strip(), "C:\\"+target_procname)
-    guest_agent.execute_file("C:\\"+target_procname)
+    guest_agent.copy_file(line.strip(), "C:\\Documents and Settings\\cll\\"+target_procname)
+    guest_agent.execute_file("C:\\Documents and Settings\\cll\\"+target_procname)
     guest_agent.stop_agent()
 
     pyrebox_print("Waiting for process %s to start\n" % target_procname)
@@ -505,14 +633,20 @@ def initialize_callbacks(module_hdl, printer):
     global cm
     global pyrebox_print
     global target_procname
+    global monitor_process_pid_list
 
     pyrebox_print = printer
+    monitor_process_pid_list = []
+    
+
     pyrebox_print("[*]  Initializing callbacks")
     pyrebox_print("[*]  You are at " + mdump_mode + " mode!")
-    
-    cm = CallbackManager(module_hdl, new_style = True)
+
+    cm = CallbackManager(module_hdl, new_style=True)
 
     cm.add_callback(CallbackManager.CREATEPROC_CB, mdump_new_proc, name="mdump_new_proc")
+
+    cm.add_callback(CallbackManager.CREATEPROC_CB, get_main_proc_pid, name="get_main_proc_pid")
 
     cm.add_callback(CallbackManager.REMOVEPROC_CB, mdump_remove_process, name="mdump_remove_proc")
 
@@ -535,6 +669,7 @@ def clean():
     print("[*]    Cleaning module")
     cm.clean()
     print("[*]    Cleaned module")
+
 
 if __name__ == "__main__":
     pass

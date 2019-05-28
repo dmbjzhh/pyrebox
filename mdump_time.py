@@ -8,6 +8,7 @@ from libdamm.api import API as DAMM
 import sqlite3
 from scripts.dealjson import sqlite_to_json
 from scripts.dealjson import diff2Graph
+import time
 
 requirements = ["plugins.guest_agent"]
 
@@ -48,7 +49,7 @@ def new_proc(params):
     pgd = params["pgd"]
     name = params["name"]
     
-    if name.lower() == "malware.exe":
+    if name.lower() == "Notepad.exe":
         pyrebox_print("Malware started! pid: %x, pgd: %x, name: %s" % (pid, pgd, name))
         cm.rm_callback("new_proc")
         s_start_time = get_system_time()
